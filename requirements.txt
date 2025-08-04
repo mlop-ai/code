@@ -1,0 +1,8 @@
+bcrypt
+dotenv
+docker
+fastapi
+psycopg2-binary
+sqlalchemy
+uvicorn
+requests-toolbelt
