@@ -47,8 +47,6 @@ def start_server(
 def stop_server(client: docker.DockerClient, port: int):
     client.containers.get(f"code-{str(port)}").stop()
     client.containers.get(f"caddy-{str(port)}").stop()
-    client.containers.get(f"code-{str(port)}").remove()
-    client.containers.get(f"caddy-{str(port)}").remove()
     client.networks.get(f"code-network-{port}").remove()
 
 
@@ -57,7 +55,6 @@ def stop_all(client: docker.DockerClient):
     for c in containers:
         networks = c.attrs["NetworkSettings"]["Networks"]
         c.stop()
-        c.remove()
         for network_name in networks:
             try:
                 network = client.networks.get(network_name)
@@ -97,6 +94,7 @@ def deploy_code(
     authorized_keys: str = "",
     cache_dir: str = os.path.abspath(os.getcwd()),
     host: str = "localhost",
+    size: int = 2,
 ) -> dict:
     try:
         check_caddy(f"{cache_dir}/.mlop/caddy")
@@ -109,16 +107,20 @@ def deploy_code(
         code_container = client.containers.run(
             image_name,
             detach=True,
+            auto_remove=True,
+            cap_drop=["all"],
+            security_opt=["no-new-privileges"],
+            mem_limit=f"{str(size)}g",
+            nano_cpus=int(size * 1_000_000_000),
             name=f"code-{str(host_port)}",
             network=network_name,
-            command=f"--disable-telemetry --auth none",
+            command="--disable-telemetry --auth none",
             environment={
                 "AUTHORIZED_KEYS": authorized_keys,
                 # "PASSWORD": password
             },
             ports={
-                f"2222/tcp": ssh_port,
-                # f"8080/tcp": 8080
+                "2222/tcp": ssh_port,
             },
             # volumes={os.path.abspath(project_dir): {"bind": "/home/mlop/project", "mode": "rw"}},
             # tty=True, stdin_open=True,
@@ -139,6 +141,7 @@ def deploy_code(
         caddy_container = client.containers.run(
             "caddy:2",
             detach=True,
+            auto_remove=True,
             name=f"caddy-{host_port}",
             network=network_name,
             ports={f"{host_port}/tcp": host_port},
