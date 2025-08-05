@@ -1,17 +1,11 @@
-import enum
-
 from sqlalchemy import (
-    JSON,
     Boolean,
     Column,
     DateTime,
-    Enum,
     ForeignKey,
-    Integer,
     String,
 )
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy.sql import func
 
 Base = declarative_base()
 
@@ -64,7 +58,7 @@ class Member(Base):
 
 class ApiKey(Base):
     __tablename__ = "api_key"
-    
+
     id = Column(String, primary_key=True)
     key = Column(String, unique=True)
     name = Column(String)
@@ -75,9 +69,9 @@ class ApiKey(Base):
     isHashed = Column(Boolean, default=True)
     lastUsed = Column(DateTime, nullable=True)
     expiresAt = Column(DateTime, nullable=True)
-    
+
     organization = relationship("Organization", backref="api_keys")
     user = relationship("User", backref="api_keys")
-    
+
     def __repr__(self):
         return f"<ApiKey(id={self.id}, key={self.key}, name={self.name}, organizationId={self.organizationId})>"

@@ -8,7 +8,6 @@ def get_smtp_config():
         "username": os.getenv("SMTP_USERNAME", ""),
         "password": os.getenv("SMTP_PASSWORD", ""),
         "from_address": os.getenv("SMTP_FROM_ADDRESS", ""),
-        "app_host": os.getenv("APP_HOST", "localhost"),
     }
 
 

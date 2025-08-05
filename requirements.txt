@@ -1,8 +1,8 @@
 bcrypt
+cryptography
 dotenv
 docker
 fastapi
-psycopg2-binary
+requests
 sqlalchemy
 uvicorn
-requests-toolbelt
