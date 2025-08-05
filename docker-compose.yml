@@ -1,0 +1,23 @@
+services:
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "20000-40000:20000-40000"  # SSH port range
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:rw
+      - ./traefik/certs:/certs
+    env_file:
+      - .env
+    networks:
+      - traefik
+
+# docker network create traefik
+networks:
+  traefik:
+    external: true

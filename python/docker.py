@@ -1,12 +1,11 @@
 import os
 import random
 import socket
-import subprocess
 import uuid
 
 import bcrypt
 import docker
-import requests
+import yaml
 
 from .utils import gen_ed25519
 
@@ -18,7 +17,7 @@ def start_server(
     gpu: bool = False,
 ):
     port = random.randint(port_range[0], port_range[1])
-    while get_available(port):
+    while _get_port(port):
         port = random.randint(port_range[0], port_range[1])
 
     password = uuid.uuid4().hex  # [:8]
@@ -27,7 +26,6 @@ def start_server(
         client=client,
         project_dir=f"/var/tmp/docker-code-{str(port)}",
         host_port=port,
-        ssh_port=port - 1,
         password=password,
         image_name="mlop-code-server:latest",
         gpu=gpu,
@@ -38,32 +36,29 @@ def start_server(
     return (
         port,
         password,
-        f"https://mlop:{password}@{host}:{port}/{password}/",
+        f"https://mlop:{password}@{host}/{port}/{password}/",
         private_key,
-        port - 1,
     )
 
 
 def stop_server(client: docker.DockerClient, port: int):
+    _traefik_del_route(port)
     client.containers.get(f"code-{str(port)}").stop()
-    client.containers.get(f"caddy-{str(port)}").stop()
-    client.networks.get(f"code-network-{port}").remove()
 
 
 def stop_all(client: docker.DockerClient):
     containers = client.containers.list(all=True)
     for c in containers:
-        networks = c.attrs["NetworkSettings"]["Networks"]
-        c.stop()
-        for network_name in networks:
+        if c.name.startswith("code-"):
             try:
-                network = client.networks.get(network_name)
-                network.remove()
-            except:
+                port = int(c.name.split("-")[1])
+                _traefik_del_route(port)
+            except (IndexError, ValueError):
                 pass
+            c.stop()
 
 
-def get_available(port):
+def _get_port(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
             s.bind(("localhost", port))
@@ -72,24 +67,68 @@ def get_available(port):
             return True
 
 
-def check_caddy(bin_path: str):
-    if not os.path.exists(f"{bin_path}"):
-        os.makedirs(os.path.dirname(bin_path), exist_ok=True)
-        response = requests.get(
-            f"https://caddyserver.com/api/download?os=linux&arch={subprocess.check_output(['dpkg', '--print-architecture']).decode().strip()}&p=github.com%2Fcaddy-dns%2Fcloudflare"
-        )
-        with open(f"{bin_path}", "wb") as f:
-            f.write(response.content)
-        os.chmod(bin_path, 0o755)  # Make executable
+def _traefik_load():
+    config_file = "traefik/dynamic/routes.yml"
+    if os.path.exists(config_file):
+        with open(config_file, "r") as f:
+            return yaml.safe_load(f) or {
+                "http": {"routers": {}, "services": {}, "middlewares": {}}
+            }
+    return {"http": {"routers": {}, "services": {}, "middlewares": {}}}
+
+
+def _traefik_save(config):
+    config_file = "traefik/dynamic/routes.yml"
+    if not config["http"]["routers"]:
+        if os.path.exists(config_file):
+            os.remove(config_file)
+        return
+
+    os.makedirs(os.path.dirname(config_file), exist_ok=True)
+    with open(config_file, "w") as f:
+        yaml.dump(config, f, default_flow_style=False)
+
+
+def _traefik_add_route(port: int, password: str, host: str = "localhost"):
+    config = _traefik_load()
+
+    config["http"]["routers"][f"code-{port}"] = {
+        "rule": f"Host(`{host}`) && PathPrefix(`/{port}/{password}/`)",
+        "service": f"code-{port}",
+        "tls": {"certResolver": "letsencrypt"},
+        "middlewares": [f"strip-{port}", f"auth-{port}"],
+    }
+    config["http"]["services"][f"code-{port}"] = {
+        "loadBalancer": {"servers": [{"url": f"http://code-{port}:8080"}]}
+    }
+    config["http"]["middlewares"][f"strip-{port}"] = {
+        "stripPrefix": {"prefixes": [f"/{port}/{password}"]}
+    }
+    config["http"]["middlewares"][f"auth-{port}"] = {
+        "basicAuth": {
+            "users": [
+                f"mlop:{bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()}"
+            ]
+        }
+    }
+    _traefik_save(config)
+
+
+def _traefik_del_route(port: int):
+    config = _traefik_load()
+    config["http"]["routers"].pop(f"code-{port}", None)
+    config["http"]["services"].pop(f"code-{port}", None)
+    config["http"]["middlewares"].pop(f"strip-{port}", None)
+    config["http"]["middlewares"].pop(f"auth-{port}", None)
+    _traefik_save(config)
 
 
 def deploy_code(
     client: docker.DockerClient,
     project_dir: str,
-    host_port: int = 8080,
-    ssh_port: int = 2222,
+    host_port: int = 2222,
     password: str = None,
-    image_name: str = "codercom/code-server:latest",
+    image_name: str = "mlop-code-server:latest",
     gpu: bool = False,
     authorized_keys: str = "",
     cache_dir: str = os.path.abspath(os.getcwd()),
@@ -97,13 +136,6 @@ def deploy_code(
     size: int = 2,
 ) -> dict:
     try:
-        check_caddy(f"{cache_dir}/.mlop/caddy")
-        network_name = f"code-network-{host_port}"
-        try:
-            network = client.networks.create(network_name, driver="bridge")
-        except docker.errors.APIError:
-            network = client.networks.get(network_name)
-
         code_container = client.containers.run(
             image_name,
             detach=True,
@@ -113,14 +145,14 @@ def deploy_code(
             mem_limit=f"{str(size)}g",
             nano_cpus=int(size * 1_000_000_000),
             name=f"code-{str(host_port)}",
-            network=network_name,
+            network="traefik",
             command="--disable-telemetry --auth none",
             environment={
                 "AUTHORIZED_KEYS": authorized_keys,
                 # "PASSWORD": password
             },
             ports={
-                "2222/tcp": ssh_port,
+                "2222/tcp": host_port,
             },
             # volumes={os.path.abspath(project_dir): {"bind": "/home/mlop/project", "mode": "rw"}},
             # tty=True, stdin_open=True,
@@ -137,37 +169,9 @@ def deploy_code(
                 else {}
             ),
         )
+        _traefik_add_route(host_port, password, host)
 
-        caddy_container = client.containers.run(
-            "caddy:2",
-            detach=True,
-            auto_remove=True,
-            name=f"caddy-{host_port}",
-            network=network_name,
-            ports={f"{host_port}/tcp": host_port},
-            volumes={
-                f"{cache_dir}/scripts/Caddyfile": {
-                    "bind": "/etc/caddy/Caddyfile",
-                    "mode": "ro",
-                },
-                f"{cache_dir}/.mlop/caddy": {"bind": "/usr/bin/caddy", "mode": "ro"},
-                f"{cache_dir}/.mlop/caddy_data": {"bind": "/data", "mode": "rw"},
-                f"{cache_dir}/.mlop/caddy_config": {"bind": "/config", "mode": "rw"},
-            },
-            environment={
-                "PORT": host_port,
-                "USERNAME": "mlop",
-                "PASSWORD": password,
-                "HASHED_PASSWORD": bcrypt.hashpw(
-                    password.encode(), bcrypt.gensalt()
-                ).decode(),
-                "ACME_AGREE": "true",
-                "DOMAIN": host,
-                "CLOUDFLARE_API_TOKEN": os.getenv("CLOUDFLARE_API_TOKEN", "nope"),
-            },
-        )
-
-        return f"{host_port}", code_container, caddy_container
+        return f"{host_port}", code_container
     except Exception as e:
         print(f"Error starting containers: {e}")
         return None
