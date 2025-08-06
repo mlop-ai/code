@@ -4,7 +4,7 @@
     "telemetry.telemetryLevel": "off",
     "window.menuBarVisibility": "classic",
     "workbench.colorTheme": "Default Dark Modern",
-    "workbench.startupEditor": "none",
+    "workbench.startupEditor": "readme",
     "workbench.commandPalette.history": 0,
     "[html]": {
         "editor.defaultFormatter": "vscode.html-language-features"
@@ -12,10 +12,6 @@
     "[javascript]": {
         "editor.defaultFormatter": "vscode.typescript-language-features"
     },
-    "python.defaultInterpreterPath": "/home/mlop/conda/bin/python",
-    "ruff.interpreter": [
-        "/home/mlop/conda/bin/python"
-    ],
     "continue.enableTabAutocomplete": true,
     "continue.telemetryEnabled": false,
     "MATLAB.telemetry": false,

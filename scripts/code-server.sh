@@ -26,4 +26,6 @@ sudo docker run \
   --tmpfs /home/mlop:rw,exec,mode=0775,uid=1000,gid=1000 \
   --tmpfs /home/linuxbrew:rw,exec,mode=0775,uid=1000,gid=1000 \
   --tmpfs /tmp:rw,exec,mode=0775,uid=1000,gid=1000 \
-  mlop-code-server:latest --disable-telemetry --auth none
+  --entrypoint /bin/sh \
+  mlop-code-server:latest \
+  -c 'mkdir -p /home/mlop/ && curl -o /home/mlop/README.md https://raw.githubusercontent.com/microsoft/vscode/refs/heads/main/SECURITY.md && exec /usr/bin/entrypoint.sh --bind-addr 0.0.0.0:8080 . --disable-telemetry --auth none'

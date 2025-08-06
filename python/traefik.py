@@ -3,9 +3,10 @@ import os
 import bcrypt
 import yaml
 
+config_file = "traefik/dynamic/routes.yml"
+
 
 def load_config():
-    config_file = "traefik/dynamic/routes.yml"
     if os.path.exists(config_file):
         with open(config_file, "r") as f:
             return yaml.safe_load(f) or {
@@ -15,7 +16,6 @@ def load_config():
 
 
 def save_config(config):
-    config_file = "traefik/dynamic/routes.yml"
     if not config["http"]["routers"]:
         if os.path.exists(config_file):
             os.remove(config_file)
@@ -28,7 +28,6 @@ def save_config(config):
 
 def add_route(port: int, password: str, host: str = "localhost"):
     config = load_config()
-
     config["http"]["routers"][f"code-{port}"] = {
         "rule": f"Host(`{host}`) && PathPrefix(`/{port}/{password}/`)",
         "service": f"code-{port}",

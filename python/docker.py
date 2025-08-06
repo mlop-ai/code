@@ -16,6 +16,7 @@ def start_server(
     host: str = "localhost",
     port_range: tuple[int, int] = (20000, 40000),
     gpu: bool = False,
+    url: str = None,
 ):
     port = random.randint(port_range[0], port_range[1])
     while _get_port(port):
@@ -23,15 +24,16 @@ def start_server(
 
     password = uuid.uuid4().hex  # [:8]
     private_key, public_key = utils.gen_ed25519()
-    deploy_code(
+    run_container(
         client=client,
-        project_dir=f"/var/tmp/docker-code-{str(port)}",
+        project_path=f"/var/tmp/docker-code-{str(port)}",
         host_port=port,
         password=password,
         image_name="mlop-code-server:latest",
         gpu=gpu,
         authorized_keys=public_key,
         host=host,
+        url=url,
     )
     logger.info(f"Started code-server at port {port} with password {password}")
     return (
@@ -68,19 +70,29 @@ def _get_port(port):
             return True
 
 
-def deploy_code(
+def run_container(
     client: docker.DockerClient,
-    project_dir: str,
+    project_path: str,
     host_port: int = 2222,
     password: str = None,
+    url: str = None,
     image_name: str = "mlop-code-server:latest",
     gpu: bool = False,
     authorized_keys: str = "",
-    cache_dir: str = os.path.abspath(os.getcwd()),
     host: str = "localhost",
     size: int = 2,
 ) -> dict:
     try:
+        cmd = "--disable-telemetry --auth none"
+        kwargs = {
+            "command": f"{cmd}",
+        }
+        if url:
+            kwargs = {
+                "entrypoint": "/bin/sh",
+                "command": f"-c 'mkdir -p /home/mlop/ && curl -o /home/mlop/README.md {url} && exec /usr/bin/entrypoint.sh --bind-addr 0.0.0.0:8080 . {cmd}'",
+            }
+
         code_container = client.containers.run(
             image_name,
             detach=True,
@@ -89,7 +101,7 @@ def deploy_code(
             tmpfs={
                 "/home/mlop": "rw,exec,mode=0775,uid=1000,gid=1000",
                 "/home/linuxbrew": "rw,exec,mode=0775,uid=1000,gid=1000",
-                "/tmp": ""
+                "/tmp": "",
             },
             cap_drop=["all"],
             security_opt=["no-new-privileges"],
@@ -97,7 +109,6 @@ def deploy_code(
             nano_cpus=int(size * 1_000_000_000),
             name=f"code-{str(host_port)}",
             network="traefik",
-            command="--disable-telemetry --auth none",
             environment={
                 "AUTHORIZED_KEYS": authorized_keys,
                 # "PASSWORD": password
@@ -105,9 +116,10 @@ def deploy_code(
             ports={
                 "2222/tcp": host_port,
             },
-            # volumes={os.path.abspath(project_dir): {"bind": "/home/mlop/project", "mode": "rw"}},
+            # volumes={os.path.abspath(project_path): {"bind": "/home/mlop/project", "mode": "rw"}},
             # tty=True, stdin_open=True,
             cpu_count=4,
+            **kwargs,
             **(
                 {
                     "device_requests": [
