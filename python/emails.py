@@ -6,7 +6,7 @@ from email.header import decode_header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-TAG = "Emails"
+logger = logging.getLogger(__name__)
 
 
 def send_email(config, from_address, to_address, subject, body, html=False):
@@ -21,9 +21,9 @@ def send_email(config, from_address, to_address, subject, body, html=False):
             server.starttls()
             server.login(config["username"], config["password"])
             server.sendmail(from_address, to_address, email.as_string())
-        print("Email sent successfully!")
+        logger.info("Email sent successfully!")
     except Exception as e:
-        print(f"Failed to send email: {e}")
+        logger.error(f"Failed to send email: {e}")
 
 
 def get_latest_unread_emails(config, mailbox="inbox", criteria="UNSEEN"):
@@ -36,19 +36,19 @@ def get_latest_unread_emails(config, mailbox="inbox", criteria="UNSEEN"):
 
         status, messages = imap_client.search(None, criteria)
         if status != "OK":
-            logging.error(f"{TAG}: Error searching for emails: {status}")
+            logger.error(f"Error searching for emails: {status}")
             return emails_data
 
         email_ids = messages[0].split()
         if not email_ids:
-            logging.debug(f"{TAG}: No new emails found.")
+            logger.debug("No new emails found.")
             return emails_data
-        logging.debug(f"{TAG}: Found {len(email_ids)} new email(s).")
+        logger.debug(f"Found {len(email_ids)} new email(s).")
 
         for e_id in email_ids:
             status, msg_data = imap_client.fetch(e_id, "(RFC822)")
             if status != "OK":
-                logging.error(f"{TAG}: Error fetching email ID {e_id}: {status}")
+                logger.error(f"Error fetching email ID {e_id}: {status}")
                 continue
 
             for response_part in msg_data:
@@ -95,8 +95,8 @@ def get_latest_unread_emails(config, mailbox="inbox", criteria="UNSEEN"):
 
         imap_client.logout()
     except imaplib.IMAP4.error as e:
-        logging.error(f"{TAG}: IMAP Error: {e}")
+        logger.error(f"IMAP Error: {e}")
     except Exception as e:
-        logging.error(f"{TAG}: An unexpected error occurred: {e}")
+        logger.error(f"An unexpected error occurred: {e}")
 
     return emails_data

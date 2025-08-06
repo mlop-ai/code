@@ -1,17 +1,5 @@
 #!/bin/sh
 set -eu
-eval "$(fixuid -q)"
-
-if [ "${DOCKER_USER-}" ]; then
-  USER="$DOCKER_USER"
-  if [ -z "$(id -u "$DOCKER_USER" 2>/dev/null)" ]; then
-    echo "$DOCKER_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee -a /etc/sudoers.d/nopasswd > /dev/null
-    sudo usermod --login "$DOCKER_USER" mlop
-    sudo groupmod -n "$DOCKER_USER" mlop
-    sudo sed -i "/mlop/d" /etc/sudoers.d/nopasswd
-  fi
-fi
-
 if [ -d "${ENTRYPOINTD}" ]; then
   find "${ENTRYPOINTD}" -type f -executable -print -exec {} \;
 fi
@@ -27,4 +15,5 @@ $(which sshd) -4Def /dev/null -h ${ssh_dir}/ssh_host_ed25519_key -o"PidFile ${ss
   -o'PasswordAuthentication no' -o'PubkeyAuthentication yes' -o'KbdInteractiveAuthentication no' \
   -o'Subsystem sftp /usr/lib/ssh/sftp-server' -o'PrintLastLog no' &
 
+. /usr/bin/utils.sh; transfer "cp -a" "/home/linuxbrew/.*" "/home/mlop/"
 exec dumb-init /usr/bin/code-server "$@"

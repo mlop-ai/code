@@ -1,13 +1,14 @@
+import logging
 import os
 import random
 import socket
 import uuid
 
-import bcrypt
 import docker
-import yaml
 
-from .utils import gen_ed25519
+from . import traefik, utils
+
+logger = logging.getLogger(__name__)
 
 
 def start_server(
@@ -21,7 +22,7 @@ def start_server(
         port = random.randint(port_range[0], port_range[1])
 
     password = uuid.uuid4().hex  # [:8]
-    private_key, public_key = gen_ed25519()
+    private_key, public_key = utils.gen_ed25519()
     deploy_code(
         client=client,
         project_dir=f"/var/tmp/docker-code-{str(port)}",
@@ -32,7 +33,7 @@ def start_server(
         authorized_keys=public_key,
         host=host,
     )
-    print(f"Started code-server at port {port} with password {password}")
+    logger.info(f"Started code-server at port {port} with password {password}")
     return (
         port,
         password,
@@ -42,7 +43,7 @@ def start_server(
 
 
 def stop_server(client: docker.DockerClient, port: int):
-    _traefik_del_route(port)
+    traefik.delete_route(port)
     client.containers.get(f"code-{str(port)}").stop()
 
 
@@ -52,7 +53,7 @@ def stop_all(client: docker.DockerClient):
         if c.name.startswith("code-"):
             try:
                 port = int(c.name.split("-")[1])
-                _traefik_del_route(port)
+                traefik.delete_route(port)
             except (IndexError, ValueError):
                 pass
             c.stop()
@@ -65,62 +66,6 @@ def _get_port(port):
             return False
         except socket.error:
             return True
-
-
-def _traefik_load():
-    config_file = "traefik/dynamic/routes.yml"
-    if os.path.exists(config_file):
-        with open(config_file, "r") as f:
-            return yaml.safe_load(f) or {
-                "http": {"routers": {}, "services": {}, "middlewares": {}}
-            }
-    return {"http": {"routers": {}, "services": {}, "middlewares": {}}}
-
-
-def _traefik_save(config):
-    config_file = "traefik/dynamic/routes.yml"
-    if not config["http"]["routers"]:
-        if os.path.exists(config_file):
-            os.remove(config_file)
-        return
-
-    os.makedirs(os.path.dirname(config_file), exist_ok=True)
-    with open(config_file, "w") as f:
-        yaml.dump(config, f, default_flow_style=False)
-
-
-def _traefik_add_route(port: int, password: str, host: str = "localhost"):
-    config = _traefik_load()
-
-    config["http"]["routers"][f"code-{port}"] = {
-        "rule": f"Host(`{host}`) && PathPrefix(`/{port}/{password}/`)",
-        "service": f"code-{port}",
-        "tls": {"certResolver": "letsencrypt"},
-        "middlewares": [f"strip-{port}", f"auth-{port}"],
-    }
-    config["http"]["services"][f"code-{port}"] = {
-        "loadBalancer": {"servers": [{"url": f"http://code-{port}:8080"}]}
-    }
-    config["http"]["middlewares"][f"strip-{port}"] = {
-        "stripPrefix": {"prefixes": [f"/{port}/{password}"]}
-    }
-    config["http"]["middlewares"][f"auth-{port}"] = {
-        "basicAuth": {
-            "users": [
-                f"mlop:{bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()}"
-            ]
-        }
-    }
-    _traefik_save(config)
-
-
-def _traefik_del_route(port: int):
-    config = _traefik_load()
-    config["http"]["routers"].pop(f"code-{port}", None)
-    config["http"]["services"].pop(f"code-{port}", None)
-    config["http"]["middlewares"].pop(f"strip-{port}", None)
-    config["http"]["middlewares"].pop(f"auth-{port}", None)
-    _traefik_save(config)
 
 
 def deploy_code(
@@ -140,6 +85,8 @@ def deploy_code(
             image_name,
             detach=True,
             auto_remove=True,
+            read_only=True,
+            tmpfs={"/home/mlop": "rw,exec,mode=0775,uid=1000,gid=1000"},
             cap_drop=["all"],
             security_opt=["no-new-privileges"],
             mem_limit=f"{str(size)}g",
@@ -169,9 +116,9 @@ def deploy_code(
                 else {}
             ),
         )
-        _traefik_add_route(host_port, password, host)
+        traefik.add_route(host_port, password, host)
 
         return f"{host_port}", code_container
     except Exception as e:
-        print(f"Error starting containers: {e}")
+        logger.error(f"Error starting containers: {e}")
         return None
