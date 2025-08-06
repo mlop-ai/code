@@ -21,12 +21,12 @@ RUN if grep -q 1000 /etc/passwd; then userdel -r "$(id -un 1000)"; fi \
   && adduser --gecos '' --disabled-password mlop
 # && echo "mlop ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/nopasswd
 
-COPY entrypoint.sh utils.sh /usr/bin/
+COPY entrypoint.sh /usr/bin/
 RUN --mount=from=packages,src=/tmp,dst=/tmp/packages dpkg -i /tmp/packages/code-server*$(dpkg --print-architecture).deb
 
 COPY settings.json /home/mlop/.local/share/code-server/User/settings.json
-RUN mkdir -p /home/linuxbrew/.linuxbrew \
-  && chown -R mlop:mlop /home/mlop/ /home/linuxbrew/
+RUN mkdir -p /home.bak /home/linuxbrew/.linuxbrew \
+  && chown -R mlop:mlop /home.bak/ /home/
 
 ENV ENTRYPOINTD=${HOME}/entrypoint.d
 EXPOSE 8080
@@ -40,5 +40,5 @@ RUN NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Hom
 #     code-server --install-extension $EXTENSION ; \
 #   done
 
-RUN . /usr/bin/utils.sh; transfer "mv" "/home/mlop/.*" "/home/linuxbrew/"
+RUN mv /home/* /home.bak/ 
 ENTRYPOINT ["/usr/bin/entrypoint.sh", "--bind-addr", "0.0.0.0:8080", "."]

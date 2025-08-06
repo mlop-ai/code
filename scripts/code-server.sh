@@ -1,9 +1,6 @@
 #!/bin/bash
-
-cd $(dirname $0)
-WORKDIR="$(realpath .)/.ci"
-mkdir -p $WORKDIR
-cd $WORKDIR
+WORKDIR="$(realpath $(dirname $0))/.ci"
+mkdir -p $WORKDIR; cd $WORKDIR
 
 export VERSION=$(curl -s https://api.github.com/repos/coder/code-server/releases/latest | grep -Po '"tag_name": "v\K[^"]*')
 wget "https://github.com/coder/code-server/releases/download/v${VERSION}/code-server_${VERSION}_$(dpkg --print-architecture).deb"
@@ -19,6 +16,14 @@ sed -i 's/{{app}}/mlop/g' .work/usr/lib/code-server/out/node/i18n/locales/en.jso
 dpkg-deb -b .work code-server_${VERSION}_$(dpkg --print-architecture).deb
 '
 
-cp ../settings.json ../entrypoint.sh ../utils.sh .
-DOCKER_BUILDKIT=1 docker build -t mlop-code-server:latest -f ../Dockerfile .
-# docker container prune -f; docker builder prune -a
+cp ../settings.json ../entrypoint.sh .
+sudo DOCKER_BUILDKIT=1 docker build -t mlop-code-server:latest -f ../Dockerfile .
+# sudo docker container prune -f; sudo docker builder prune -a
+sudo docker run \
+  --read-only --rm --cap-drop=all \
+  --security-opt=no-new-privileges \
+  --network=traefik -e AUTHORIZED_KEYS="nope" \
+  --tmpfs /home/mlop:rw,exec,mode=0775,uid=1000,gid=1000 \
+  --tmpfs /home/linuxbrew:rw,exec,mode=0775,uid=1000,gid=1000 \
+  --tmpfs /tmp:rw,exec,mode=0775,uid=1000,gid=1000 \
+  mlop-code-server:latest --disable-telemetry --auth none

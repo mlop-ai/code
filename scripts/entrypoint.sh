@@ -4,6 +4,9 @@ if [ -d "${ENTRYPOINTD}" ]; then
   find "${ENTRYPOINTD}" -type f -executable -print -exec {} \;
 fi
 
+cp -a /home.bak/mlop /home/
+cp -a /home.bak/linuxbrew /home/
+
 # sshd
 ssh_dir=/home/mlop/.ssh; mkdir -p ${ssh_dir}
 ssh-keygen -t ed25519 -f ${ssh_dir}/ssh_host_ed25519_key -N ""
@@ -15,5 +18,4 @@ $(which sshd) -4Def /dev/null -h ${ssh_dir}/ssh_host_ed25519_key -o"PidFile ${ss
   -o'PasswordAuthentication no' -o'PubkeyAuthentication yes' -o'KbdInteractiveAuthentication no' \
   -o'Subsystem sftp /usr/lib/ssh/sftp-server' -o'PrintLastLog no' &
 
-. /usr/bin/utils.sh; transfer "cp -a" "/home/linuxbrew/.*" "/home/mlop/"
 exec dumb-init /usr/bin/code-server "$@"

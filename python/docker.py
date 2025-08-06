@@ -86,7 +86,11 @@ def deploy_code(
             detach=True,
             auto_remove=True,
             read_only=True,
-            tmpfs={"/home/mlop": "rw,exec,mode=0775,uid=1000,gid=1000"},
+            tmpfs={
+                "/home/mlop": "rw,exec,mode=0775,uid=1000,gid=1000",
+                "/home/linuxbrew": "rw,exec,mode=0775,uid=1000,gid=1000",
+                "/tmp": ""
+            },
             cap_drop=["all"],
             security_opt=["no-new-privileges"],
             mem_limit=f"{str(size)}g",
